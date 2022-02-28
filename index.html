@@ -10,15 +10,39 @@
 </head>
 
 <body>
+	<ws-main>
+		<header>
+			<h1>Hello World</h1>
+		</header>
+		<main>
+			<form>
+				<div>
+					<p>User Name</p>
+					<div>
+						<input type="text" ws-control="username" />
+					</div>
+				</div>
 
-	<ws-header>
-		<img />
-		<h1>Demo Sites</h1>
-		<ws-click action="onClicked">
-			<button>Clicked Me!</button>
-		</ws-click>
-	</ws-header>
+				<div>
+					<p>Address</p>
+					<div>
+						<input type="text" ws-control="address" />
+					</div>
+				</div>
 
+				<div>
+					<p>Password</p>
+					<div>
+						<input type="password" ws-control="password" />
+					</div>
+				</div>
+				<ws-onevent action="click:showme">
+					<button>Show Me</button>
+				</ws-onevent>
+			</form>
+		</main>
+		<footer></footer>
+	</ws-main>
 	<script src="index.js"></script>
 </body>
 

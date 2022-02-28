@@ -1,143 +1,152 @@
-class VSV extends HTMLElement {
-	connectedCallback() {
-		const label = this.innerText;
-		const text = document.createTextNode(label);
-		this.replaceWith(text);
-	}
-}
-customElements.define('ws-v', VSV);
+/**
+ * {
+    allowUsingActions: false, // Kendisindeki fonksiyonlara erişilip erişilemeyeceği. Varsayılan olarak true
+ * }
+ */
+
+const WorkspaceJS = (function () {
+  const createComponent = (function () {
+    return function (componentName, component) {
+      const instanceComponent = component?.();
+      const { init, dispose, actions, configuration } = instanceComponent;
+
+      customElements.define(componentName, class extends HTMLElement {
+        constructor() {
+          super();
+          component.controls = new Proxy({}, {
+            get: (target, prop, value) => {
+              return this.querySelector(`[ws-control="${prop}"]`) || null;
+            }
+          });
+
+          component.controlsArray = () => {
+            return [...this.querySelectorAll('[ws-control]')].map(control => {
+              return control.value;
+            });
+          }
+
+          component.controlsJSON = () => {
+            const returnValue = {};
+            this.querySelectorAll('[ws-control]')?.forEach(control => {
+              returnValue[control.getAttribute('ws-control')] = control.value;
+            });
+            return returnValue;
+          }
+        }
+
+        async getIfActionDefined(actionname) {
+          return [true, actions[actionname]];
+        }
+
+        get allowUsingActions() {
+          return configuration?.allowUsingActions ?? true;
+        }
+
+        async render() { }
+
+        async connectedCallback() {
+          init?.();
+        }
+
+        async disconnectedCallback() {
+          dispose?.();
+        }
+
+      });
+    }
+  })();
+
+  class WSAction extends HTMLElement {
+    constructor(args = {
+      selector: false
+    }) {
+
+      // Inherit Base Class
+      super();
+
+      // Variables
+      let nativeElement = args.selector && this.querySelector(args.selector) || this;
+      let name;
+
+      // Prototypes
+      Object.defineProperties(this, {
+        'name': {
+          get: () => args.actionName
+        },
+        'nativeElement': {
+          get: () => nativeElement
+        }
+      });
+
+      // Add to onLoad
+      window.addEventListener('load', async () => this.render());
+    }
+
+    async render() {
+      const actionAttr = this.getAttribute('action');
+      if (!actionAttr) return;
+
+      let parent = this;
+      const [eventName, actionCallback] = actionAttr.split(':');
+      while (true) {
+        parent = parent.parentNode;
+
+        if ([
+          !parent, parent.allowUsingActions === false,
+          parent?.tagName.toLowerCase() === 'body'
+        ].some(v => v == true)) break;
+
+        if (parent.getIfActionDefined) {
+          const [isBase, currentAction] = await parent.getIfActionDefined(actionCallback);
+          if (isBase && currentAction) {
+            this.nativeElement.addEventListener(eventName, (e) => {
+              currentAction(e);
+            });
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  class WSOnEvent extends WSAction {
+    constructor() {
+      super({});
+    }
+
+    async connectedCallback() {
+    }
+  }
+
+  class WSOnInput extends WSAction {
+    constructor() {
+      super({
+        selector: 'input'
+      });
+    }
+  }
+
+  customElements.define('ws-onevent', WSOnEvent);
+  customElements.define('ws-oninput', WSOnInput);
+
+  return {
+    createComponent
+  }
+})();
 
 
-const models_data = {};
-const datas = {};
-const models = function (model, datakey) {
-	if (!(datakey in datas)) models_data[datakey] = [];
-	models_data[datakey].push(model);
-}
+const { createComponent } = WorkspaceJS;
 
-const createComponent = function (componentName, component) {
-	const instanceComponent = component?.();
-	const { init, dispose, actions } = instanceComponent;
+createComponent('ws-main', function app() {
 
-	function render(target) {
+  function showme(e) {
+    e.preventDefault();
+    console.log(app.controlsJSON());
+  }
 
-		let actionArray = target.querySelectorAll('[action]');
-		actionArray?.forEach(act => {
-			console.log(act.setActions);
-			act.setActions = actions;
-		});
-
-	}
-
-	customElements.define(componentName, class extends HTMLElement {
-		constructor() {
-			super();
-		}
-
-		connectedCallback() {
-			render(this);
-			init?.();
-		}
-
-		disconnectedCallback() {
-			dispose?.();
-		}
-
-	});
-}
-
-createComponent('ws-header', () => {
-
-	function dispose() {
-		console.log('Disposed')
-	}
-
-	function init() {
-		console.log('init');
-	}
-
-	function onClicked() {
-		console.log('Clicked');
-	}
-
-	return {
-		dispose,
-		init,
-		actions: {
-			onClicked
-		}
-	}
-});
-
-
-class WSAction extends HTMLElement {
-	constructor() {
-		super();
-
-		let name;
-		let action;
-		let actions = {};
-		let isLocked = false;
-
-		Object.defineProperties(this, {
-			'name': {
-				set: (label) => name = label
-			},
-			'action': {
-				set: (label) => {
-					if (name && action) {
-						this.removeEventListener(name, action);
-					}
-
-					const selectEvent = actions?.[label];
-					if (name && (action = selectEvent)) {
-						this.addEventListener(name, selectEvent, false);
-					}
-				}
-			},
-		});
-
-		this.setActions = (values) => {
-			console.log(values);
-			if (isLocked) return;
-			isLocked = true;
-			actions = values;
-		}
-	}
-
-
-	static get observedAttributes() { return ['action', 'name']; }
-
-	attributeChangedCallback(name, oldValue, newValue) {
-		if (name in this) {
-			this[name] = newValue;
-		}
-	}
-
-	connectedCallback() {
-
-	}
-}
-
-class WSActionClick extends WSAction {
-	constructor() {
-		super();
-		this.name = 'click';
-	}
-}
-
-class WSActionMousedown extends WSAction {
-	constructor() {
-		super();
-		this.name = 'mousedown';
-	}
-}
-
-customElements.define('ws-action', WSAction, { extends: 'div' });
-customElements.define('ws-click', WSActionClick, { extends: 'div' });
-customElements.define('ws-mousedown', WSActionMousedown, { extends: 'div' });
-
-// setTimeout(() => {
-// 	let c = document.querySelector('ws-header');
-// 	c.parentNode.removeChild(c);
-// }, 3000);
+  return {
+    actions: {
+      showme
+    }
+  };
+})
