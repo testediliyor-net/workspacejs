@@ -7,8 +7,35 @@
 const WorkspaceJS = (function () {
   const createComponent = (function () {
     return function (componentName, component) {
+      let cacheDatas = Object.assign({}, component.datas);
+      let subscribes = {};
+
+      component.datas = new Proxy(cacheDatas, {
+        get(_target, _propname) {
+          return _target?.[_propname] || '';
+        },
+        set(_target, _propname, _value) {
+          let oldValue = _target[_propname];
+          _target[_propname] = _value;
+          subscribes[_propname]?.forEach(n => {
+            n?.(oldValue, _value);
+          });
+        }
+      });
+
       const instanceComponent = component?.();
-      const { init, dispose, actions, configuration } = instanceComponent;
+
+      function addSubscribe(key, callback) {
+        if (!(key in subscribes)) {
+          // SUBSCRIBE IDLERİ PID ID GIBI ÖZEL GUID NUMARALARLA TUTABİLİRİZ
+          subscribes[key] = [];
+        }
+
+        subscribes[key].push(callback);
+
+        callback('', component.datas[key] || '', subscribes[key].length - 1);
+      }
+
 
       customElements.define(componentName, class extends HTMLElement {
         constructor() {
@@ -19,42 +46,74 @@ const WorkspaceJS = (function () {
             }
           });
 
-          component.controlsArray = () => {
-            return [...this.querySelectorAll('[ws-control]')].map(control => {
-              return control.value;
-            });
-          }
+          this.setAttribute('ws-x', '');
 
-          component.controlsJSON = () => {
-            const returnValue = {};
-            this.querySelectorAll('[ws-control]')?.forEach(control => {
-              returnValue[control.getAttribute('ws-control')] = control.value;
-            });
-            return returnValue;
-          }
+          // component.controlsArray = () => {
+          //   return [...this.querySelectorAll('[ws-control]')].map(control => {
+          //     return control.value;
+          //   });
+          // }
+
+          // component.controlsJSON = () => {
+          //   const returnValue = {};
+          //   this.querySelectorAll('[ws-control]')?.forEach(control => {
+          //     returnValue[control.getAttribute('ws-control')] = control.value;
+          //   });
+          //   return returnValue;
+          // }
         }
 
         async getIfActionDefined(actionname) {
-          return [true, actions[actionname]];
+          return [true, instanceComponent?.actions[actionname]];
         }
 
         get allowUsingActions() {
-          return configuration?.allowUsingActions ?? true;
+          return instanceComponent?.configuration?.allowUsingActions ?? true;
         }
 
         async render() { }
 
         async connectedCallback() {
-          init?.();
+          instanceComponent?.init?.();
         }
 
         async disconnectedCallback() {
-          dispose?.();
+          instanceComponent?.dispose?.();
         }
 
       });
+
+      createPropModel(componentName, addSubscribe);
     }
   })();
+
+  const createPropModel = function (key, addSubscribe) {
+
+    class PropModel extends HTMLElement {
+      constructor() {
+        super();
+      }
+
+      get name() {
+        return this.getAttribute('name');
+      }
+
+      async connectedCallback() {
+        this.render();
+      }
+
+      async render() {
+        const propName = this.name;
+        let textContainer = document.createTextNode('');
+        this.replaceWith(textContainer);
+        addSubscribe(propName, (oldValue, newValue, pidID) => {
+          textContainer.textContent = newValue;
+        });
+      }
+    }
+
+    customElements.define(`${key}-prop`, PropModel);
+  }
 
   class WSAction extends HTMLElement {
     constructor(args = {
@@ -84,6 +143,7 @@ const WorkspaceJS = (function () {
 
     async render() {
       const actionAttr = this.getAttribute('action');
+      this.removeAttribute('action');
       if (!actionAttr) return;
 
       let parent = this;
@@ -139,14 +199,28 @@ const { createComponent } = WorkspaceJS;
 
 createComponent('ws-main', function app() {
 
-  function showme(e) {
+  app.datas.username = 'Olur yaa';
+  app.datas.whoIsIt = 'Lorem ipsum dolor sit amet';
+});
+
+
+createComponent('ws-header', function app() {
+
+  app.datas.title = 'WS HEADER TITLE';
+
+  function clickedMe(e) {
     e.preventDefault();
-    console.log(app.controlsJSON());
+    app.datas.title = 'sehll';
+  }
+
+  function onChanged(e) {
+    app.datas.title = e.target.value || '';
   }
 
   return {
     actions: {
-      showme
+      clickedMe,
+      onChanged
     }
-  };
-})
+  }
+});

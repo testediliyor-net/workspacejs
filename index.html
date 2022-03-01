@@ -11,37 +11,45 @@
 
 <body>
 	<ws-main>
-		<header>
-			<h1>Hello World</h1>
-		</header>
-		<main>
-			<form>
-				<div>
-					<p>User Name</p>
+		<ws-header>
+			<header>
+				<h1>
+					<ws-header-prop name="title">
+				</h1>
+			</header>
+			<main>
+				<form>
 					<div>
-						<input type="text" ws-control="username" />
+						<p>User Name</p>
+						<div>
+							<ws-oninput action="input:onChanged">
+								<input type="text" ws-control="username" />
+							</ws-oninput>
+							<ws-main-prop name="username"></ws-main-prop>
+							<ws-main-prop name="whoIsIt"></ws-main-prop>
+						</div>
 					</div>
-				</div>
 
-				<div>
-					<p>Address</p>
 					<div>
-						<input type="text" ws-control="address" />
+						<p>Address</p>
+						<div>
+							<input type="text" ws-control="address" />
+						</div>
 					</div>
-				</div>
 
-				<div>
-					<p>Password</p>
 					<div>
-						<input type="password" ws-control="password" />
+						<p>Password</p>
+						<div>
+							<input type="password" ws-control="password" />
+						</div>
 					</div>
-				</div>
-				<ws-onevent action="click:showme">
-					<button>Show Me</button>
-				</ws-onevent>
-			</form>
-		</main>
-		<footer></footer>
+					<ws-onevent action="click:clickedMe">
+						<button>Show Me</button>
+					</ws-onevent>
+				</form>
+			</main>
+			<footer></footer>
+		</ws-header>
 	</ws-main>
 	<script src="index.js"></script>
 </body>
