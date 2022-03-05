@@ -1,3 +1,7 @@
+body{
+  background-color:#333;
+  color:white;
+}
 [ws-x] {
   display: block;
 }

@@ -11,45 +11,26 @@
 
 <body>
 	<ws-main>
-		<ws-header>
-			<header>
-				<h1>
-					<ws-header-prop name="title">
-				</h1>
-			</header>
-			<main>
-				<form>
-					<div>
-						<p>User Name</p>
-						<div>
-							<ws-oninput action="input:onChanged">
-								<input type="text" ws-control="username" />
-							</ws-oninput>
-							<ws-main-prop name="username"></ws-main-prop>
-							<ws-main-prop name="whoIsIt"></ws-main-prop>
-						</div>
-					</div>
 
+		<header>
+		</header>
+		<main>
+			<form>
+				<div>
+					<p>User Name</p>
 					<div>
-						<p>Address</p>
-						<div>
-							<input type="text" ws-control="address" />
-						</div>
+						<ws-oninput action="input:onChanged">
+							<input type="text" ws-control="username" />
+						</ws-oninput>
+						<ws-main-prop name="address.0.name"></ws-main-prop>
 					</div>
-
-					<div>
-						<p>Password</p>
-						<div>
-							<input type="password" ws-control="password" />
-						</div>
-					</div>
-					<ws-onevent action="click:clickedMe">
-						<button>Show Me</button>
-					</ws-onevent>
-				</form>
-			</main>
-			<footer></footer>
-		</ws-header>
+				</div>
+				<ws-onevent action="click:clickedMe">
+					<button>Show Me</button>
+				</ws-onevent>
+			</form>
+		</main>
+		<footer></footer>
 	</ws-main>
 	<script src="index.js"></script>
 </body>

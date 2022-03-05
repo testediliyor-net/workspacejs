@@ -4,37 +4,91 @@
  * }
  */
 
+Object.prototype.isObject = function (obj) {
+  return Object.prototype.toString.call(obj) == '[object Object]';
+}
+
 const WorkspaceJS = (function () {
+
+  const createGUID = function () {
+    return Math.floor((Math.random() * 100000000) * 0x10000).toString(16);
+  }
+
+  const defineGetProperty = function (target, name, value) {
+    Object.defineProperty(target, name, { enumerable: false, value: value, writable: false });
+  }
+
+  function addProperty(cache, key, value) {
+    let _elements = [];
+    let _oldValue = '';
+    let _newValue = value;
+
+    Object.defineProperty(cache, key, {
+      enumerable: true,
+      get: function () {
+        return _newValue;
+      },
+      set: function (val) {
+        if (val?.tagName) {
+          _elements.push(val);
+          return;
+        }
+
+        if (_oldValue == val) return false;
+        _oldValue = _newValue;
+        _newValue = defineProperty(val);
+        _elements?.forEach(el => el?.subscribeUpdate?.(_oldValue, _newValue));
+      }
+    });
+
+    if (cache.isEnumerable) return;
+    if (Array.isArray(value) || Object.isObject(value)) {
+      Object.defineProperty(cache, 'isEnumerable', {
+        enumerable: false,
+        configurable: false,
+        writable: false,
+        value: true
+      });
+    }
+  }
+
+  function defineProperty(value) {
+    if (Array.isArray(value) && !value?.isEnumerable) {
+      let cacheArray = [];
+      for (let i = 0; i < value.length; i++) {
+        let v = defineProperty(value[i]);
+        addProperty(cacheArray, i, v);
+      }
+
+      return cacheArray;
+    } else if (Object.isObject(value) && !value?.isEnumerable) {
+      const returnValue = {};
+      Object.keys(value).forEach(n => {
+        addProperty(returnValue, n, defineProperty(value[n]));
+      });
+
+      return returnValue;
+    } else {
+      return value;
+    }
+
+  }
+
+
   const createComponent = (function () {
     return function (componentName, component) {
-      let cacheDatas = Object.assign({}, component.datas);
-      let subscribes = {};
-
-      component.datas = new Proxy(cacheDatas, {
-        get(_target, _propname) {
-          return _target?.[_propname] || '';
-        },
-        set(_target, _propname, _value) {
-          let oldValue = _target[_propname];
-          _target[_propname] = _value;
-          subscribes[_propname]?.forEach(n => {
-            n?.(oldValue, _value);
-          });
-        }
-      });
 
       const instanceComponent = component?.();
 
-      function addSubscribe(key, callback) {
-        if (!(key in subscribes)) {
-          // SUBSCRIBE IDLERİ PID ID GIBI ÖZEL GUID NUMARALARLA TUTABİLİRİZ
-          subscribes[key] = [];
+      let cacheDatas = defineProperty(component.datas || {});
+
+      Object.defineProperty(component, 'datas', {
+        get: () => cacheDatas,
+        set: (val) => {
+          cacheDatas = Object.assign(cacheDatas, defineProperty(val));
+          console.log(cacheDatas);
         }
-
-        subscribes[key].push(callback);
-
-        callback('', component.datas[key] || '', subscribes[key].length - 1);
-      }
+      });
 
 
       customElements.define(componentName, class extends HTMLElement {
@@ -48,19 +102,6 @@ const WorkspaceJS = (function () {
 
           this.setAttribute('ws-x', '');
 
-          // component.controlsArray = () => {
-          //   return [...this.querySelectorAll('[ws-control]')].map(control => {
-          //     return control.value;
-          //   });
-          // }
-
-          // component.controlsJSON = () => {
-          //   const returnValue = {};
-          //   this.querySelectorAll('[ws-control]')?.forEach(control => {
-          //     returnValue[control.getAttribute('ws-control')] = control.value;
-          //   });
-          //   return returnValue;
-          // }
         }
 
         async getIfActionDefined(actionname) {
@@ -83,15 +124,16 @@ const WorkspaceJS = (function () {
 
       });
 
-      createPropModel(componentName, addSubscribe);
+      createPropModel(componentName, cacheDatas);
     }
   })();
 
-  const createPropModel = function (key, addSubscribe) {
-
+  const createPropModel = function (key, cacheDatas) {
     class PropModel extends HTMLElement {
       constructor() {
         super();
+        defineGetProperty(this, 'guid', createGUID());
+        // window.addEventListener('load', () => this.render());
       }
 
       get name() {
@@ -102,13 +144,37 @@ const WorkspaceJS = (function () {
         this.render();
       }
 
+
       async render() {
         const propName = this.name;
         let textContainer = document.createTextNode('');
         this.replaceWith(textContainer);
-        addSubscribe(propName, (oldValue, newValue, pidID) => {
+
+
+        this.subscribeUpdate = function (oldValue, newValue) {
           textContainer.textContent = newValue;
-        });
+        }
+
+        let spt = propName.split('.');
+        let propertyLabel = cacheDatas;
+
+        while (spt.length || false) {
+          let key = spt.shift();
+          if (spt.length == 0) {
+            propertyLabel[key] = this;
+          }
+
+          propertyLabel = propertyLabel[key];
+          this.subscribeUpdate('', propertyLabel);
+          if (propertyLabel == undefined) break;
+        }
+
+
+
+      }
+
+      async disconnectedCallback() {
+        // removeSubscribe(this, this.name);
       }
     }
 
@@ -198,29 +264,33 @@ const WorkspaceJS = (function () {
 const { createComponent } = WorkspaceJS;
 
 createComponent('ws-main', function app() {
+  app.datas = {
+    'title': 'hello',
+    address: [{
+      name: 'Timer'
+    }]
+  };
 
-  app.datas.username = 'Olur yaa';
-  app.datas.whoIsIt = 'Lorem ipsum dolor sit amet';
-});
-
-
-createComponent('ws-header', function app() {
-
-  app.datas.title = 'WS HEADER TITLE';
+  function onChanged(e) {
+    app.datas.address[0].name = e.target.value;
+  }
 
   function clickedMe(e) {
     e.preventDefault();
-    app.datas.title = 'sehll';
-  }
+    console.log(e);
+    app.datas = {
+      address: [{
+        name: 'Deneme'
+      }]
+    }
 
-  function onChanged(e) {
-    app.datas.title = e.target.value || '';
+    console.log(app.datas);
   }
 
   return {
     actions: {
-      clickedMe,
-      onChanged
+      onChanged,
+      clickedMe
     }
   }
 });
