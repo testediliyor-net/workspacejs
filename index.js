@@ -178,7 +178,7 @@ const WorkspaceJS = (function () {
       /** Only for Object Data */
       else if (Object.isObject(propertyValue) && !propertyValue?.isEnumerable) {
 
-        const PARSED_OBJECT_VALUE = {};
+        const PARSED_OBJECT = {};
 
         Object.keys(propertyValue).forEach(propertyKey => {
           /** Like .address.0.<home_address>. */
@@ -187,10 +187,10 @@ const WorkspaceJS = (function () {
           /** Parse current data in object[x] */
           const [PROPERTY_PATH, PARSED_VALUE] = parseData(propertyValue[propertyKey], currentPropertyPath);
 
-          addProperty(PARSED_OBJECT_VALUE, propertyKey, PARSED_VALUE, PROPERTY_PATH);
+          addProperty(PARSED_OBJECT, propertyKey, PARSED_VALUE, PROPERTY_PATH);
         });
 
-        return [currentPropertyPath, PARSED_OBJECT_VALUE];
+        return [currentPropertyPath, PARSED_OBJECT];
       }
 
       /** Else this data type is string, number or boolean */
