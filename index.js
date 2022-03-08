@@ -18,19 +18,46 @@ Element.prototype.attr = function (name) {
   if (arguments.length === 1)
     return this.getAttribute(name) || '';
 
-  if (arguments.length === 2) this.setAttribute(name, value);
+  if (arguments.length === 2) this.setAttribute(name, arguments[1]);
 
+  return this;
 }
 
-Element.prototype.hasAttr = function (name) {
+Element.prototype.hAttr = function (name) {
   return this.hasAttribute(name);
 }
 
-Element.prototype.removeAttr = function (...names) {
+Element.prototype.rAttr = function (...names) {
   while (names?.length || false) {
     this.removeAttribute(names.shift());
   }
+  return this;
 }
+
+Element.prototype.selector = function (selector) {
+  return this.querySelector(selector);
+}
+
+Object.prototype.define = function (target, key, options) {
+  this.defineProperty(target, key, options);
+}
+
+Object.prototype.defines = function (target, options) {
+  this.defineProperties(target, options);
+}
+
+function onEvent(name, action, options = false) {
+  this.addEventListener(name, action, options);
+  return this;
+}
+
+function offEvent(name, action, options = false) {
+  this.removeEventListener(name, action, options);
+  return this;
+}
+
+Element.prototype.on = onEvent;
+Element.prototype.off = offEvent;
 
 
 /**
@@ -46,11 +73,12 @@ const WorkspaceJS = (function () {
   }
 
   const defineGetProperty = function (target, name, value) {
-    Object.defineProperty(target, name, { enumerable: false, value: value, writable: false });
+    Object.define(target, name, { enumerable: false, value: value, writable: false });
   }
 
   const getValueByPath = function (path = []) {
     let currentValue;
+
     try {
       while (path?.length || false) {
         currentValue = (currentValue || GLOBALS)[path.shift()];
@@ -87,7 +115,7 @@ const WorkspaceJS = (function () {
       sendDataToSubscribers();
 
 
-      Object.defineProperty(targetDataPath, key, {
+      Object.define(targetDataPath, key, {
         enumerable: true,
         get: function () {
           return dataNewValue;
@@ -106,8 +134,8 @@ const WorkspaceJS = (function () {
           /** Assign current data to variable old */
           dataOldValue = dataNewValue;
 
-
-          [p, dataNewValue] = parseData(propertyValue);
+          /** _ = PROPERTY PATH. NOT USED PROPERTY */
+          [_, dataNewValue = CURRENT_VALUE] = parseData(propertyValue);
 
           /** Send To */
           sendDataToSubscribers();
@@ -116,7 +144,7 @@ const WorkspaceJS = (function () {
 
       if (targetDataPath.isEnumerable) return;
       if (Array.isArray(value) || Object.isObject(value)) {
-        Object.defineProperty(targetDataPath, 'isEnumerable', {
+        Object.define(targetDataPath, 'isEnumerable', {
           enumerable: false,
           configurable: false,
           writable: false,
@@ -137,10 +165,10 @@ const WorkspaceJS = (function () {
           currentPropertyPath.push(itemIndex);
 
           /** Parse current data in item[x] */
-          let [fullpath, parsedValue] = parseData(propertyValue[itemIndex], currentPropertyPath);
+          const [PROPERTY_PATH, PARSED_VALUE] = parseData(propertyValue[itemIndex], currentPropertyPath);
 
           /** Create changable property to data path */
-          addProperty(PARSED_ARRAY_ITEMS, itemIndex, parsedValue, fullpath);
+          addProperty(PARSED_ARRAY_ITEMS, itemIndex, PARSED_VALUE, PROPERTY_PATH);
         }
 
         return [currentPropertyPath, PARSED_ARRAY_ITEMS];
@@ -188,7 +216,7 @@ const WorkspaceJS = (function () {
       super();
       let source = this.innerHTML;
       this.innerHTML = '';
-      Object.defineProperty(this, 'source', { get: () => source });
+      Object.define(this, 'source', { get: () => source });
     }
 
     render() {
@@ -212,18 +240,18 @@ const WorkspaceJS = (function () {
       const TRANSLATED_DATA = dataTranslations(DATA_SUBSCRIBERS);
       const COMPONENT_GLOBAL_KEY = '@' + componentName;
 
+      /** _ = PROPERTY PATH. NOT USED PROPERTY */
+      const [_, PARSED_VALUE] = TRANSLATED_DATA.parseData({ [COMPONENT_GLOBAL_KEY]: { datas: component.datas } }, []);
 
-      const [FULL_PATH, PARSED_VALUE] = TRANSLATED_DATA.parseData({ [COMPONENT_GLOBAL_KEY]: { datas: component.datas } }, []);
-
-      const GLOBALS = PARSED_VALUE[COMPONENT_GLOBAL_KEY] = {
+      const COMPONENT_DATAS = PARSED_VALUE[COMPONENT_GLOBAL_KEY] = {
         actions: { ...component?.actions },
         datas: PARSED_VALUE[COMPONENT_GLOBAL_KEY].datas,
       };
 
-      Object.defineProperty(component, 'datas', {
-        get: () => GLOBALS.datas,
+      Object.define(component, 'datas', {
+        get: () => COMPONENT_DATAS.datas,
         set: (val) => {
-          GLOBALS.datas = Object.assign(GLOBALS.datas, TRANSLATED_DATA.parseData(val));
+          COMPONENT_DATAS.datas = Object.assign(COMPONENT_DATAS.datas, TRANSLATED_DATA.parseData(val));
         }
       });
 
@@ -231,18 +259,20 @@ const WorkspaceJS = (function () {
       customElements.define(PREFIX_KEY + componentName, class extends HTMLElement {
         constructor() {
           super();
+
           component.controls = new Proxy({}, {
-            get: (target, prop, value) => {
-              return this.querySelector(`[${PREFIX_KEY}control="${prop}"]`) || null;
+            /** _ = NOT USED PROPERTY */
+            get: (_target, prop, _value) => {
+              return this.selector(`[${PREFIX_KEY}control="${prop}"]`) || null;
             }
           });
 
-          this.setAttribute(PREFIX_KEY + 'x', '');
+          this.attr(PREFIX_KEY + 'x', '');
 
         }
 
         async getIfActionDefined(actionname) {
-          return [true, globals?.actions?.[actionname]];
+          return [true, COMPONENT_DATAS?.actions?.[actionname]];
         }
 
         get allowUsingActions() {
@@ -343,10 +373,10 @@ const WorkspaceJS = (function () {
 
       super();
 
-      let nativeElement = this.hasAttr('target') && this.querySelector(this.attr('target'))
-        || this.querySelector(PREFIX_KEY + 'target') || this;
+      let nativeElement = this.hAttr('target') && this.selector(this.attr('target'))
+        || this.selector(PREFIX_KEY + 'target') || this;
 
-      Object.defineProperties(this, {
+      Object.defines(this, {
         'name': {
           get: () => args.actionName
         },
@@ -360,18 +390,18 @@ const WorkspaceJS = (function () {
     }
 
     async render() {
-      if (!this.hasAttr('action')) return;
+      if (!this.hAttr('action')) return;
       const actionContent = this.attr('action');
 
       /** Remove Attributes */
-      this.removeAttr('action', 'target');
+      this.rAttr('action', 'target');
 
 
       const [eventName, actionCallback] = actionContent.split(':');
       const actionPath = actionCallback?.split('.');
       const action = getActionByPath(actionPath);
 
-      this.nativeElement.addEventListener(eventName, (e) => action(e));
+      this.nativeElement.on(eventName, (e) => action(e));
 
     }
   }
