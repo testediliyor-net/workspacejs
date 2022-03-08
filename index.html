@@ -18,14 +18,32 @@
 			<form>
 				<div>
 					<p>User Name</p>
-					<div>
-						<ws-oninput action="input:onChanged">
-							<input type="text" ws-control="username" />
-						</ws-oninput>
-						<ws-main-prop name="address.0.name"></ws-main-prop>
+					<div id="klarnet">
+						<ws-onevent action="input:@main.actions.onChanged">
+							<input type="text" ws-control="username" ws-target />
+						</ws-onevent>
+						<ws-text name="@main.datas.address.0.name"></ws-text>
 					</div>
 				</div>
-				<ws-onevent action="click:clickedMe">
+
+
+				<!-- <ws-for content="product:$main.products">
+					<ws-for-text name="product.name"></ws-for-text>
+					<ws-for-text name="product.orderID"></ws-for-text>
+					<ws-for-text name="product.ID"></ws-for-text>
+					<div class="loader" ws-loader>
+						Loading...
+					</div>
+					<ws-for content="address:product.address">
+						<ws-for-text name="address.name"></ws-for-text>
+						<ws-for-text name="address.orderID"></ws-for-text>
+						<ws-for-text name="address.ID"></ws-for-text>
+						<div class="loader" ws-loader>
+							Loading...
+						</div>
+					</ws-for>
+				</ws-for> -->
+				<ws-onevent action="click:@main.actions.clickedMe" target="button">
 					<button>Show Me</button>
 				</ws-onevent>
 			</form>

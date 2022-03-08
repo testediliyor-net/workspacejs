@@ -4,11 +4,42 @@
  * }
  */
 
+/**
+ * PROTOTYPES
+ */
+
 Object.prototype.isObject = function (obj) {
   return Object.prototype.toString.call(obj) == '[object Object]';
 }
 
+Element.prototype.attr = function (name) {
+  if (!name) return '';
+
+  if (arguments.length === 1)
+    return this.getAttribute(name) || '';
+
+  if (arguments.length === 2) this.setAttribute(name, value);
+
+}
+
+Element.prototype.hasAttr = function (name) {
+  return this.hasAttribute(name);
+}
+
+Element.prototype.removeAttr = function (...names) {
+  while (names?.length || false) {
+    this.removeAttribute(names.shift());
+  }
+}
+
+
+/**
+ * LIBRARY CREATOR
+ */
 const WorkspaceJS = (function () {
+
+  const PREFIX_KEY = 'ws-';
+  const GLOBALS = {};
 
   const createGUID = function () {
     return Math.floor((Math.random() * 100000000) * 0x10000).toString(16);
@@ -18,182 +49,297 @@ const WorkspaceJS = (function () {
     Object.defineProperty(target, name, { enumerable: false, value: value, writable: false });
   }
 
-  function addProperty(cache, key, value) {
-    let _elements = [];
-    let _oldValue = '';
-    let _newValue = value;
+  const getValueByPath = function (path = []) {
+    let currentValue;
+    try {
+      while (path?.length || false) {
+        currentValue = (currentValue || GLOBALS)[path.shift()];
+      }
+    } catch (error) {
+      currentValue = undefined;
+    }
 
-    Object.defineProperty(cache, key, {
-      enumerable: true,
-      get: function () {
-        return _newValue;
-      },
-      set: function (val) {
-        if (val?.tagName) {
-          _elements.push(val);
-          return;
+    return currentValue;
+  }
+  const getActionByPath = function (path = []) {
+    let action = getValueByPath(path);
+    action = typeof action === 'function' ? action : function (e) { e.preventDefault() };
+    return action;
+  }
+
+  const dataTranslations = function (refSubscribersDataObject = {}) {
+
+    function addProperty(targetDataPath, key, value, fullpath) {
+      let subscribedElements = []; // Subscribed elements
+      let dataOldValue = '';
+      let dataNewValue = value ?? '';
+      const PROPERTY_ABSOLUTE_PATH = fullpath;
+
+      function sendDataToSubscribers() {
+        refSubscribersDataObject?.[PROPERTY_ABSOLUTE_PATH]?.forEach(subscriber => subscriber?.(dataOldValue, dataNewValue));
+      }
+
+      /** Trigger Once */
+      sendDataToSubscribers();
+
+
+      Object.defineProperty(targetDataPath, key, {
+        enumerable: true,
+        get: function () {
+          return dataNewValue;
+        },
+        set: function (propertyValue) {
+
+          /** If subscriber element */
+          if (propertyValue?.tagName) {
+            subscribedElements.push(propertyValue);
+            return;
+          }
+
+          /** If value is not subscriber and two data is equal*/
+          if (dataOldValue == propertyValue) return false;
+
+          /** Assign current data to variable old */
+          dataOldValue = dataNewValue;
+
+
+          [p, dataNewValue] = parseData(propertyValue);
+
+          /** Send To */
+          sendDataToSubscribers();
+        }
+      });
+
+      if (targetDataPath.isEnumerable) return;
+      if (Array.isArray(value) || Object.isObject(value)) {
+        Object.defineProperty(targetDataPath, 'isEnumerable', {
+          enumerable: false,
+          configurable: false,
+          writable: false,
+          value: true
+        });
+      }
+    }
+
+    function parseData(propertyValue, currentPropertyPath = []) {
+
+      /** Only for Array Data */
+      if (Array.isArray(propertyValue) && !propertyValue?.isEnumerable) {
+        let parsedArrayItems = [];
+
+        for (let itemIndex = 0; itemIndex < propertyValue.length; itemIndex++) {
+          /** Like .address.<0>. */
+          currentPropertyPath.push(itemIndex);
+
+          /** Parse current data in item[x] */
+          let [fullpath, parsedValue] = parseData(propertyValue[itemIndex], currentPropertyPath);
+
+          /** Create changable property to data path */
+          addProperty(parsedArrayItems, itemIndex, parsedValue, fullpath);
         }
 
-        if (_oldValue == val) return false;
-        _oldValue = _newValue;
-        _newValue = defineProperty(val);
-        _elements?.forEach(el => el?.subscribeUpdate?.(_oldValue, _newValue));
-      }
-    });
+        return [currentPropertyPath, parsedArrayItems];
 
-    if (cache.isEnumerable) return;
-    if (Array.isArray(value) || Object.isObject(value)) {
-      Object.defineProperty(cache, 'isEnumerable', {
-        enumerable: false,
-        configurable: false,
-        writable: false,
-        value: true
-      });
+      }
+
+      /** Only for Object Data */
+      else if (Object.isObject(propertyValue) && !propertyValue?.isEnumerable) {
+        const PARSED_OBJECT_VALUE = {};
+
+        Object.keys(propertyValue).forEach(propertyKey => {
+          /** Like .address.0.<home_address>. */
+          currentPropertyPath.push(propertyKey);
+
+          /** Parse current data in object[x] */
+          const [PROPERTY_PATH, PARSED_VALUE] = parseData(propertyValue[propertyKey], currentPropertyPath);
+
+          addProperty(PARSED_OBJECT_VALUE, propertyKey, PARSED_VALUE, PROPERTY_PATH);
+        });
+
+        return [currentPropertyPath, PARSED_OBJECT_VALUE];
+      }
+
+      /** Else this data type is string, number or boolean */
+      else {
+        const PROPERTY_PATH = currentPropertyPath.join('.');
+
+        /** Clear all items in REF Path */
+        while (currentPropertyPath?.length || false) {
+          currentPropertyPath.shift();
+        }
+
+        return [PROPERTY_PATH, propertyValue];
+      };
+    }
+
+    return {
+      parseData
     }
   }
 
-  function defineProperty(value) {
-    if (Array.isArray(value) && !value?.isEnumerable) {
-      let cacheArray = [];
-      for (let i = 0; i < value.length; i++) {
-        let v = defineProperty(value[i]);
-        addProperty(cacheArray, i, v);
-      }
-
-      return cacheArray;
-    } else if (Object.isObject(value) && !value?.isEnumerable) {
-      const returnValue = {};
-      Object.keys(value).forEach(n => {
-        addProperty(returnValue, n, defineProperty(value[n]));
-      });
-
-      return returnValue;
-    } else {
-      return value;
+  class WSFor extends HTMLElement {
+    constructor() {
+      super();
+      let source = this.innerHTML;
+      this.innerHTML = '';
+      Object.defineProperty(this, 'source', { get: () => source });
     }
 
+    render() {
+
+    }
   }
 
+  customElements.define(PREFIX_KEY + 'for', WSFor);
+
+  let DATA_SUBSCRIBERS = {};
 
   const createComponent = (function () {
     return function (componentName, component) {
 
-      const instanceComponent = component?.();
+      /** Component Initializer */
+      component?.();
 
-      let cacheDatas = defineProperty(component.datas || {});
+      /**
+       * Data Translations
+       */
+      const TRANSLATED_DATA = dataTranslations(DATA_SUBSCRIBERS);
+      const COMPONENT_GLOBAL_KEY = '@' + componentName;
+
+
+      const [FULL_PATH, PARSED_VALUE] = TRANSLATED_DATA.parseData({ [COMPONENT_GLOBAL_KEY]: { datas: component.datas } }, []);
+
+      const GLOBALS = PARSED_VALUE[COMPONENT_GLOBAL_KEY] = {
+        actions: { ...component?.actions },
+        datas: PARSED_VALUE[COMPONENT_GLOBAL_KEY].datas,
+      };
 
       Object.defineProperty(component, 'datas', {
-        get: () => cacheDatas,
+        get: () => GLOBALS.datas,
         set: (val) => {
-          cacheDatas = Object.assign(cacheDatas, defineProperty(val));
-          console.log(cacheDatas);
+          GLOBALS.datas = Object.assign(GLOBALS.datas, TRANSLATED_DATA.parseData(val));
         }
       });
 
 
-      customElements.define(componentName, class extends HTMLElement {
+      customElements.define(PREFIX_KEY + componentName, class extends HTMLElement {
         constructor() {
           super();
           component.controls = new Proxy({}, {
             get: (target, prop, value) => {
-              return this.querySelector(`[ws-control="${prop}"]`) || null;
+              return this.querySelector(`[${PREFIX_KEY}control="${prop}"]`) || null;
             }
           });
 
-          this.setAttribute('ws-x', '');
+          this.setAttribute(PREFIX_KEY + 'x', '');
 
         }
 
         async getIfActionDefined(actionname) {
-          return [true, instanceComponent?.actions[actionname]];
+          return [true, globals?.actions?.[actionname]];
         }
 
         get allowUsingActions() {
-          return instanceComponent?.configuration?.allowUsingActions ?? true;
+          return component?.configuration?.allowUsingActions ?? true;
         }
 
         async render() { }
 
         async connectedCallback() {
-          instanceComponent?.init?.();
+          component?.init?.();
         }
 
         async disconnectedCallback() {
-          instanceComponent?.dispose?.();
+          component?.dispose?.();
         }
 
       });
-
-      createPropModel(componentName, cacheDatas);
     }
   })();
 
-  const createPropModel = function (key, cacheDatas) {
-    class PropModel extends HTMLElement {
-      constructor() {
-        super();
-        defineGetProperty(this, 'guid', createGUID());
-        // window.addEventListener('load', () => this.render());
+  /**
+   * 
+   * 
+   * 
+   * 
+   * 
+   * 
+   */
+  class WSText extends HTMLElement {
+    constructor() {
+      super();
+      defineGetProperty(this, 'guid', createGUID());
+      window.addEventListener('load', async () => this.render());
+    }
+
+    get name() {
+      return this.attr('name');
+    }
+
+    async render() {
+      const propName = this.name;
+      if (!propName) return;
+
+      const SUBSCRIBERS = DATA_SUBSCRIBERS[propName] || (DATA_SUBSCRIBERS[propName] = []);
+
+      let textContainer = document.createTextNode('');
+      this.replaceWith(textContainer);
+
+
+      const update = async function (oldValue, newValue) {
+        textContainer.textContent = newValue;
       }
 
-      get name() {
-        return this.getAttribute('name');
-      }
+      SUBSCRIBERS.push(update);
 
-      async connectedCallback() {
-        this.render();
-      }
+      let spt = propName?.split('.');
+      let propertyLabel = GLOBALS[spt.shift()] || false;
 
+      try {
 
-      async render() {
-        const propName = this.name;
-        let textContainer = document.createTextNode('');
-        this.replaceWith(textContainer);
-
-
-        this.subscribeUpdate = function (oldValue, newValue) {
-          textContainer.textContent = newValue;
-        }
-
-        let spt = propName.split('.');
-        let propertyLabel = cacheDatas;
-
-        while (spt.length || false) {
+        while (spt.length || propertyLabel || false) {
           let key = spt.shift();
           if (spt.length == 0) {
             propertyLabel[key] = this;
+            update('', propertyLabel[key]);
+            break;
           }
-
           propertyLabel = propertyLabel[key];
-          this.subscribeUpdate('', propertyLabel);
-          if (propertyLabel == undefined) break;
         }
 
-
-
-      }
-
-      async disconnectedCallback() {
-        // removeSubscribe(this, this.name);
+      } catch (error) {
+        console.log('While error');
       }
     }
 
-    customElements.define(`${key}-prop`, PropModel);
+    async disconnectedCallback() {
+      // removeSubscribe(this, this.name);
+    }
+
   }
 
-  class WSAction extends HTMLElement {
-    constructor(args = {
-      selector: false
-    }) {
+  customElements.define(PREFIX_KEY + 'text', WSText);
 
-      // Inherit Base Class
+
+  /**
+   * 
+   * 
+   * 
+   * 
+   * 
+   * 
+   * 
+   * 
+   * 
+   */
+  class WSAction extends HTMLElement {
+    constructor() {
+
       super();
 
-      // Variables
-      let nativeElement = args.selector && this.querySelector(args.selector) || this;
-      let name;
+      let nativeElement = this.hasAttr('target') && this.querySelector(this.attr('target'))
+        || this.querySelector(PREFIX_KEY + 'target') || this;
 
-      // Prototypes
       Object.defineProperties(this, {
         'name': {
           get: () => args.actionName
@@ -208,89 +354,65 @@ const WorkspaceJS = (function () {
     }
 
     async render() {
-      const actionAttr = this.getAttribute('action');
-      this.removeAttribute('action');
-      if (!actionAttr) return;
+      if (!this.hasAttr('action')) return;
+      const actionContent = this.attr('action');
 
-      let parent = this;
-      const [eventName, actionCallback] = actionAttr.split(':');
-      while (true) {
-        parent = parent.parentNode;
+      /** Remove Attributes */
+      this.removeAttr('action', 'target');
 
-        if ([
-          !parent, parent.allowUsingActions === false,
-          parent?.tagName.toLowerCase() === 'body'
-        ].some(v => v == true)) break;
 
-        if (parent.getIfActionDefined) {
-          const [isBase, currentAction] = await parent.getIfActionDefined(actionCallback);
-          if (isBase && currentAction) {
-            this.nativeElement.addEventListener(eventName, (e) => {
-              currentAction(e);
-            });
-            break;
-          }
-        }
-      }
+      const [eventName, actionCallback] = actionContent.split(':');
+      const actionPath = actionCallback?.split('.');
+      const action = getActionByPath(actionPath);
+
+      this.nativeElement.addEventListener(eventName, (e) => action(e));
+
     }
   }
 
-  class WSOnEvent extends WSAction {
-    constructor() {
-      super({});
-    }
 
-    async connectedCallback() {
-    }
-  }
-
-  class WSOnInput extends WSAction {
-    constructor() {
-      super({
-        selector: 'input'
-      });
-    }
-  }
+  /**
+   * 
+   * 
+   * 
+   */
+  class WSOnEvent extends WSAction { }
 
   customElements.define('ws-onevent', WSOnEvent);
-  customElements.define('ws-oninput', WSOnInput);
 
   return {
     createComponent
   }
 })();
 
+/**
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ */
 
 const { createComponent } = WorkspaceJS;
 
-createComponent('ws-main', function app() {
-  app.datas = {
-    'title': 'hello',
+createComponent('main', function use() {
+
+  use.datas = {
+    title: 'hello',
+    order: '123001.23.13101312.120123',
     address: [{
       name: 'Timer'
     }]
   };
-
-  function onChanged(e) {
-    app.datas.address[0].name = e.target.value;
-  }
-
-  function clickedMe(e) {
-    e.preventDefault();
-    console.log(e);
-    app.datas = {
-      address: [{
-        name: 'Deneme'
-      }]
-    }
-
-    console.log(app.datas);
-  }
-
-  return {
-    actions: {
-      onChanged,
-      clickedMe
-    }
-  }
 });
