@@ -61,6 +61,8 @@ const WorkspaceJS = (function () {
 
     return currentValue;
   }
+
+  
   const getActionByPath = function (path = []) {
     let action = getValueByPath(path);
     action = typeof action === 'function' ? action : function (e) { e.preventDefault() };
