@@ -62,7 +62,7 @@ const WorkspaceJS = (function () {
     return currentValue;
   }
 
-  
+
   const getActionByPath = function (path = []) {
     let action = getValueByPath(path);
     action = typeof action === 'function' ? action : function (e) { e.preventDefault() };
@@ -72,9 +72,11 @@ const WorkspaceJS = (function () {
   const dataTranslations = function (refSubscribersDataObject = {}) {
 
     function addProperty(targetDataPath, key, value, fullpath) {
-      let subscribedElements = []; // Subscribed elements
+
       let dataOldValue = '';
       let dataNewValue = value ?? '';
+
+      const SUBSCRIBED_ELEMENTS = []; // Subscribed elements
       const PROPERTY_ABSOLUTE_PATH = fullpath;
 
       function sendDataToSubscribers() {
@@ -94,7 +96,7 @@ const WorkspaceJS = (function () {
 
           /** If subscriber element */
           if (propertyValue?.tagName) {
-            subscribedElements.push(propertyValue);
+            SUBSCRIBED_ELEMENTS.push(propertyValue);
             return;
           }
 
@@ -127,7 +129,8 @@ const WorkspaceJS = (function () {
 
       /** Only for Array Data */
       if (Array.isArray(propertyValue) && !propertyValue?.isEnumerable) {
-        let parsedArrayItems = [];
+
+        const PARSED_ARRAY_ITEMS = [];
 
         for (let itemIndex = 0; itemIndex < propertyValue.length; itemIndex++) {
           /** Like .address.<0>. */
@@ -137,15 +140,16 @@ const WorkspaceJS = (function () {
           let [fullpath, parsedValue] = parseData(propertyValue[itemIndex], currentPropertyPath);
 
           /** Create changable property to data path */
-          addProperty(parsedArrayItems, itemIndex, parsedValue, fullpath);
+          addProperty(PARSED_ARRAY_ITEMS, itemIndex, parsedValue, fullpath);
         }
 
-        return [currentPropertyPath, parsedArrayItems];
+        return [currentPropertyPath, PARSED_ARRAY_ITEMS];
 
       }
 
       /** Only for Object Data */
       else if (Object.isObject(propertyValue) && !propertyValue?.isEnumerable) {
+
         const PARSED_OBJECT_VALUE = {};
 
         Object.keys(propertyValue).forEach(propertyKey => {
