@@ -99,15 +99,15 @@ const WorkspaceJS = (function () {
 
   const dataTranslations = function (refSubscribersDataObject = {}) {
 
-    function addProperty(targetDataPath, key, value, fullpath) {
+    function addProperty(targetDataPath, key, value, fullpath = []) {
 
       let dataOldValue = '';
       let dataNewValue = value ?? '';
 
       const SUBSCRIBED_ELEMENTS = []; // Subscribed elements
-      const PROPERTY_ABSOLUTE_PATH = fullpath;
-
+      const PROPERTY_ABSOLUTE_PATH = fullpath.join('.');
       function sendDataToSubscribers() {
+        // console.log(refSubscribersDataObject, PROPERTY_ABSOLUTE_PATH);
         refSubscribersDataObject?.[PROPERTY_ABSOLUTE_PATH]?.forEach(subscriber => subscriber?.(dataOldValue, dataNewValue));
       }
 
@@ -121,7 +121,6 @@ const WorkspaceJS = (function () {
           return dataNewValue;
         },
         set: function (propertyValue) {
-
           /** If subscriber element */
           if (propertyValue?.tagName) {
             SUBSCRIBED_ELEMENTS.push(propertyValue);
@@ -135,7 +134,7 @@ const WorkspaceJS = (function () {
           dataOldValue = dataNewValue;
 
           /** _ = PROPERTY PATH. NOT USED PROPERTY */
-          [_, dataNewValue = CURRENT_VALUE] = parseData(propertyValue);
+          dataNewValue = parseData(propertyValue, fullpath);
 
           /** Send To */
           sendDataToSubscribers();
@@ -162,16 +161,16 @@ const WorkspaceJS = (function () {
 
         for (let itemIndex = 0; itemIndex < propertyValue.length; itemIndex++) {
           /** Like .address.<0>. */
-          currentPropertyPath.push(itemIndex);
+          const CURRENT_PATH = [...currentPropertyPath, itemIndex];
 
           /** Parse current data in item[x] */
-          const [PROPERTY_PATH, PARSED_VALUE] = parseData(propertyValue[itemIndex], currentPropertyPath);
+          const PARSED_VALUE = parseData(propertyValue[itemIndex], CURRENT_PATH);
 
           /** Create changable property to data path */
-          addProperty(PARSED_ARRAY_ITEMS, itemIndex, PARSED_VALUE, PROPERTY_PATH);
+          addProperty(PARSED_ARRAY_ITEMS, itemIndex, PARSED_VALUE, CURRENT_PATH);
         }
 
-        return [currentPropertyPath, PARSED_ARRAY_ITEMS];
+        return PARSED_ARRAY_ITEMS;
 
       }
 
@@ -181,28 +180,22 @@ const WorkspaceJS = (function () {
         const PARSED_OBJECT = {};
 
         Object.keys(propertyValue).forEach(propertyKey => {
+
           /** Like .address.0.<home_address>. */
-          currentPropertyPath.push(propertyKey);
+          const CURRENT_PATH = [...currentPropertyPath, propertyKey];
 
           /** Parse current data in object[x] */
-          const [PROPERTY_PATH, PARSED_VALUE] = parseData(propertyValue[propertyKey], currentPropertyPath);
+          const PARSED_VALUE = parseData(propertyValue[propertyKey], CURRENT_PATH);
 
-          addProperty(PARSED_OBJECT, propertyKey, PARSED_VALUE, PROPERTY_PATH);
+          addProperty(PARSED_OBJECT, propertyKey, PARSED_VALUE, CURRENT_PATH);
         });
 
-        return [currentPropertyPath, PARSED_OBJECT];
+        return PARSED_OBJECT;
       }
 
       /** Else this data type is string, number or boolean */
       else {
-        const PROPERTY_PATH = currentPropertyPath.join('.');
-
-        /** Clear all items in REF Path */
-        while (currentPropertyPath?.length || false) {
-          currentPropertyPath.shift();
-        }
-
-        return [PROPERTY_PATH, propertyValue];
+        return propertyValue;
       };
     }
 
@@ -241,17 +234,26 @@ const WorkspaceJS = (function () {
       const COMPONENT_GLOBAL_KEY = '@' + componentName;
 
       /** _ = PROPERTY PATH. NOT USED PROPERTY */
-      const [_, PARSED_VALUE] = TRANSLATED_DATA.parseData({ [COMPONENT_GLOBAL_KEY]: { datas: component.datas } }, []);
+      const PARSED_VALUE = TRANSLATED_DATA.parseData(
+        {
+          [COMPONENT_GLOBAL_KEY]: {
+            datas: component.datas
+          }
+        });
 
-      const COMPONENT_DATAS = PARSED_VALUE[COMPONENT_GLOBAL_KEY] = {
+      let componentDatas = GLOBALS[COMPONENT_GLOBAL_KEY] = {
         actions: { ...component?.actions },
         datas: PARSED_VALUE[COMPONENT_GLOBAL_KEY].datas,
       };
 
       Object.define(component, 'datas', {
-        get: () => COMPONENT_DATAS.datas,
+        get: () => componentDatas.datas,
         set: (val) => {
-          COMPONENT_DATAS.datas = Object.assign(COMPONENT_DATAS.datas, TRANSLATED_DATA.parseData(val));
+          componentDatas.datas = Object.assign(componentDatas.datas, TRANSLATED_DATA.parseData({
+            [COMPONENT_GLOBAL_KEY]: {
+              datas: val
+            }
+          }, [COMPONENT_GLOBAL_KEY, 'datas']));
         }
       });
 
@@ -272,7 +274,7 @@ const WorkspaceJS = (function () {
         }
 
         async getIfActionDefined(actionname) {
-          return [true, COMPONENT_DATAS?.actions?.[actionname]];
+          return [true, componentDatas?.actions?.[actionname]];
         }
 
         get allowUsingActions() {
@@ -322,7 +324,7 @@ const WorkspaceJS = (function () {
       this.replaceWith(textContainer);
 
 
-      const update = async function (oldValue, newValue) {
+      const update = function (oldValue, newValue) {
         textContainer.textContent = newValue;
       }
 
@@ -344,7 +346,7 @@ const WorkspaceJS = (function () {
         }
 
       } catch (error) {
-        console.log('While error');
+        console.log('While error', error);
       }
     }
 
@@ -451,4 +453,10 @@ createComponent('main', function use() {
       name: 'Timer'
     }]
   };
+
+  use.actions = {
+    onChanged: function (e) {
+      use.datas.address[0].name = e.target.value;
+    }
+  }
 });
