@@ -8,6 +8,7 @@
  * PROTOTYPES
  */
 
+//#region PROTOTYPES
 Object.prototype.isObject = function (obj) {
   return Object.prototype.toString.call(obj) == '[object Object]';
 }
@@ -59,6 +60,8 @@ function offEvent(name, action, options = false) {
 Element.prototype.on = onEvent;
 Element.prototype.off = offEvent;
 
+//#endregion PROTOTYPE END
+
 
 /**
  * LIBRARY CREATOR
@@ -67,6 +70,8 @@ const WorkspaceJS = (function () {
 
   const PREFIX_KEY = 'ws-';
   const GLOBALS = {};
+  const DATA_SUBSCRIBERS = {};
+  const DATA_SCHEMAS = {};
 
   const createGUID = function () {
     return Math.floor((Math.random() * 100000000) * 0x10000).toString(16);
@@ -90,14 +95,25 @@ const WorkspaceJS = (function () {
     return currentValue;
   }
 
-
   const getActionByPath = function (path = []) {
     let action = getValueByPath(path);
     action = typeof action === 'function' ? action : function (e) { e.preventDefault() };
     return action;
   }
 
-  const dataTranslations = function (refSubscribersDataObject = {}) {
+  const getAnyDataFrom = function (target, name, defaultValue) {
+    return target[name] || (target[name] = defaultValue);
+  }
+
+  const getDataSchemas = function (name, defaultValue) {
+    return getAnyDataFrom(DATA_SCHEMAS, name, defaultValue);
+  }
+
+  const getDataSubscribers = function (name, defaultValue) {
+    return getAnyDataFrom(DATA_SUBSCRIBERS, name, defaultValue);
+  }
+
+  const dataTranslations = function (refSubscribersDataObject = {}, refSchema = {}) {
 
     function addProperty(targetDataPath, key, value, fullpath = []) {
 
@@ -106,9 +122,11 @@ const WorkspaceJS = (function () {
 
       const SUBSCRIBED_ELEMENTS = []; // Subscribed elements
       const PROPERTY_ABSOLUTE_PATH = fullpath.join('.');
+
       function sendDataToSubscribers() {
         // console.log(refSubscribersDataObject, PROPERTY_ABSOLUTE_PATH);
         refSubscribersDataObject?.[PROPERTY_ABSOLUTE_PATH]?.forEach(subscriber => subscriber?.(dataOldValue, dataNewValue));
+        refSchema[PROPERTY_ABSOLUTE_PATH] = [dataOldValue, dataNewValue];
       }
 
       /** Trigger Once */
@@ -116,7 +134,6 @@ const WorkspaceJS = (function () {
 
 
       Object.define(targetDataPath, key, {
-        enumerable: true,
         get: function () {
           return dataNewValue;
         },
@@ -207,19 +224,40 @@ const WorkspaceJS = (function () {
   class WSFor extends HTMLElement {
     constructor() {
       super();
+
+      let allowRendered = true;
       let source = this.innerHTML;
       this.innerHTML = '';
-      Object.define(this, 'source', { get: () => source });
+
+      const renderer = () => {
+        const NAME = this.content;
+        if (!NAME) return;
+
+        const [FOR_LOOP_KEY, DATA_PROPERTY_KEY] = NAME.split(':');
+        const LINKED_DATA_PATH = getDataSchemas(DATA_PROPERTY_KEY, false);
+
+        if (!LINKED_DATA_PATH && allowRendered) {
+          window.addEventListener('load', renderer, false);
+          allowRendered = false;
+          return;
+        }
+
+        
+
+
+      }
+
+
+      renderer();
     }
 
-    render() {
-
+    get content() {
+      return this.attr('content') || '';
     }
   }
 
   customElements.define(PREFIX_KEY + 'for', WSFor);
 
-  let DATA_SUBSCRIBERS = {};
 
   const createComponent = (function () {
     return function (componentName, component) {
@@ -230,7 +268,7 @@ const WorkspaceJS = (function () {
       /**
        * Data Translations
        */
-      const TRANSLATED_DATA = dataTranslations(DATA_SUBSCRIBERS);
+      const TRANSLATED_DATA = dataTranslations(DATA_SUBSCRIBERS, DATA_SCHEMAS);
       const COMPONENT_GLOBAL_KEY = '@' + componentName;
 
       /** _ = PROPERTY PATH. NOT USED PROPERTY */
@@ -306,48 +344,52 @@ const WorkspaceJS = (function () {
   class WSText extends HTMLElement {
     constructor() {
       super();
+
+      let allowRendered = true;
+
+      /** GUID */
       defineGetProperty(this, 'guid', createGUID());
-      window.addEventListener('load', async () => this.render());
-    }
 
-    get name() {
-      return this.attr('name');
-    }
+      /** Render HTML */
+      const renderer = () => {
+        const NAME = this.content;
+        if (!NAME) return;
 
-    async render() {
-      const propName = this.name;
-      if (!propName) return;
+        const LINKED_DATA_PATH = getDataSchemas(NAME, false);
 
-      const SUBSCRIBERS = DATA_SUBSCRIBERS[propName] || (DATA_SUBSCRIBERS[propName] = []);
-
-      let textContainer = document.createTextNode('');
-      this.replaceWith(textContainer);
-
-
-      const update = function (oldValue, newValue) {
-        textContainer.textContent = newValue;
-      }
-
-      SUBSCRIBERS.push(update);
-
-      let spt = propName?.split('.');
-      let propertyLabel = GLOBALS[spt.shift()] || false;
-
-      try {
-
-        while (spt.length || propertyLabel || false) {
-          let key = spt.shift();
-          if (spt.length == 0) {
-            propertyLabel[key] = this;
-            update('', propertyLabel[key]);
-            break;
-          }
-          propertyLabel = propertyLabel[key];
+        /** 
+         * Trigger the Renderer function if there is no data and the AllowRendered is true 
+         * If there is no data then the page has not yet been loaded. 
+         * That's why we define the onLoad property for the process to run when the page is loaded.
+         * */
+        if (!LINKED_DATA_PATH && allowRendered) {
+          window.addEventListener('load', renderer, false);
+          allowRendered = false;
+          return;
         }
 
-      } catch (error) {
-        console.log('While error', error);
+        /** Subscribe for changes */
+        const SUBSCRIBERS = getDataSubscribers(NAME, []);
+
+        /** Create the element which to change */
+        let textNode = document.createTextNode('');
+        this.replaceWith(textNode);
+
+        const update = function (oldValue, newValue) {
+          textNode.textContent = newValue;
+        }
+
+        SUBSCRIBERS.push(update);
+
+        LINKED_DATA_PATH && update(...LINKED_DATA_PATH);
       }
+
+      renderer();
+
+    }
+
+    get content() {
+      return this.attr('content') || '';
     }
 
     async disconnectedCallback() {
@@ -379,9 +421,6 @@ const WorkspaceJS = (function () {
         || this.selector(PREFIX_KEY + 'target') || this;
 
       Object.defines(this, {
-        'name': {
-          get: () => args.actionName
-        },
         'nativeElement': {
           get: () => nativeElement
         }
@@ -447,8 +486,11 @@ const { createComponent } = WorkspaceJS;
 createComponent('main', function use() {
 
   use.datas = {
-    title: 'hello',
-    order: '123001.23.13101312.120123',
+    products: [
+      'Products 1',
+      'Products 2',
+      'Products 3'
+    ],
     address: [{
       name: 'Timer'
     }]

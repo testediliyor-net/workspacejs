@@ -22,33 +22,21 @@
 						<ws-onevent action="input:@main.actions.onChanged">
 							<input type="text" ws-control="username" ws-target />
 						</ws-onevent>
-						<ws-text name="@main.datas.address.0.name"></ws-text>
+						<ws-text content="@main.datas.address.0.name"></ws-text>
 					</div>
 				</div>
 
-
-				<!-- <ws-for content="product:$main.products">
-					<ws-for-text name="product.name"></ws-for-text>
-					<ws-for-text name="product.orderID"></ws-for-text>
-					<ws-for-text name="product.ID"></ws-for-text>
-					<div class="loader" ws-loader>
+				<br><br/>
+				<ws-for content="product:@main.datas.products">
+					<ws-text content="product.name"></ws-text>
+					<ws-text content="product.orderID"></ws-text>
+					<ws-text content="product.ID"></ws-text>
+					<!-- <div class="loader" ws-loader>
 						Loading...
-					</div>
-					<ws-for content="address:product.address">
-						<ws-for-text name="address.name"></ws-for-text>
-						<ws-for-text name="address.orderID"></ws-for-text>
-						<ws-for-text name="address.ID"></ws-for-text>
-						<div class="loader" ws-loader>
-							Loading...
-						</div>
-					</ws-for>
-				</ws-for> -->
-				<ws-onevent action="click:@main.actions.clickedMe" target="button">
-					<button>Show Me</button>
-				</ws-onevent>
+					</div> -->
+				</ws-for>
 			</form>
 		</main>
-		<footer></footer>
 	</ws-main>
 	<script src="index.js"></script>
 </body>
