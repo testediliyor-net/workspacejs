@@ -26,11 +26,39 @@
 					</div>
 				</div>
 
-				<br><br/>
+				<br><br />
 				<ws-for content="product:@main.datas.products">
-					<ws-text content="product.name"></ws-text>
-					<ws-text content="product.orderID"></ws-text>
-					<ws-text content="product.ID"></ws-text>
+					<table>
+						<tr>
+							<td>
+								<ws-text content="product.name"></ws-text>
+							</td>
+							<td>
+								<ws-text content="product.orderID"></ws-text>
+							</td>
+							<td>
+								<ws-text content="product.ID"></ws-text>
+							</td>
+						</tr>
+						<tr>
+							<td colspan="3">
+								<ws-for content="archive:product.archives">
+									<ws-text content="archive.title"></ws-text><br />
+
+									<table>
+										<tr>
+											<td>
+												<ws-for content="number:archive.numbers">
+													<ws-text content="number"></ws-text>
+												</ws-for>
+											</td>
+										</tr>
+									</table>
+								</ws-for>
+							</td>
+						</tr>
+					</table>
+
 					<!-- <div class="loader" ws-loader>
 						Loading...
 					</div> -->

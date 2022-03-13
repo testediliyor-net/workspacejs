@@ -71,7 +71,8 @@ const WorkspaceJS = (function () {
   const PREFIX_KEY = 'ws-';
   const GLOBALS = {};
   const DATA_SUBSCRIBERS = {};
-  const DATA_SCHEMAS = {};
+  const GLOBALS_ABSOLUTE_PATH = {};
+  const DATA_TEMP_SCHEMAS = {};
 
   const createGUID = function () {
     return Math.floor((Math.random() * 100000000) * 0x10000).toString(16);
@@ -101,16 +102,33 @@ const WorkspaceJS = (function () {
     return action;
   }
 
-  const getAnyDataFrom = function (target, name, defaultValue) {
-    return target[name] || (target[name] = defaultValue);
+  const getDataFromGlobals = function (name, defaultValue) {
+    return name in GLOBALS_ABSOLUTE_PATH ? GLOBALS_ABSOLUTE_PATH[name] : defaultValue;
   }
 
-  const getDataSchemas = function (name, defaultValue) {
-    return getAnyDataFrom(DATA_SCHEMAS, name, defaultValue);
+  const setDataToGlobals = function (name, value) {
+    name in GLOBALS_ABSOLUTE_PATH && (GLOBALS_ABSOLUTE_PATH[name] = value);
   }
 
-  const getDataSubscribers = function (name, defaultValue) {
-    return getAnyDataFrom(DATA_SUBSCRIBERS, name, defaultValue);
+  const setDataSubscribers = function (name, action) {
+    if (!(name in DATA_SUBSCRIBERS)) {
+      DATA_SUBSCRIBERS[name] = [action];
+      return;
+    }
+
+    DATA_SUBSCRIBERS[name].push(action);
+  }
+
+  const getTempSchemas = function (name, defaultValue) {
+    return name in DATA_TEMP_SCHEMAS ? DATA_TEMP_SCHEMAS[name] : defaultValue;
+  }
+
+  const setTempSchemas = function (name, value) {
+    DATA_TEMP_SCHEMAS[name] = value;
+  }
+
+  const cleanTempSchemas = function (name) {
+    delete DATA_TEMP_SCHEMAS[name];
   }
 
   const dataTranslations = function (refSubscribersDataObject = {}, refSchema = {}) {
@@ -120,29 +138,26 @@ const WorkspaceJS = (function () {
       let dataOldValue = '';
       let dataNewValue = value ?? '';
 
-      const SUBSCRIBED_ELEMENTS = []; // Subscribed elements
       const PROPERTY_ABSOLUTE_PATH = fullpath.join('.');
 
       function sendDataToSubscribers() {
-        // console.log(refSubscribersDataObject, PROPERTY_ABSOLUTE_PATH);
-        refSubscribersDataObject?.[PROPERTY_ABSOLUTE_PATH]?.forEach(subscriber => subscriber?.(dataOldValue, dataNewValue));
-        refSchema[PROPERTY_ABSOLUTE_PATH] = [dataOldValue, dataNewValue];
+        refSubscribersDataObject?.[PROPERTY_ABSOLUTE_PATH]?.forEach(subscriber => {
+          subscriber(dataNewValue);
+        });
+
+        refSchema[PROPERTY_ABSOLUTE_PATH] = dataNewValue;
       }
 
       /** Trigger Once */
       sendDataToSubscribers();
 
-
       Object.define(targetDataPath, key, {
+        enumerable: true,
+
         get: function () {
           return dataNewValue;
         },
         set: function (propertyValue) {
-          /** If subscriber element */
-          if (propertyValue?.tagName) {
-            SUBSCRIBED_ELEMENTS.push(propertyValue);
-            return;
-          }
 
           /** If value is not subscriber and two data is equal*/
           if (dataOldValue == propertyValue) return false;
@@ -203,7 +218,6 @@ const WorkspaceJS = (function () {
 
           /** Parse current data in object[x] */
           const PARSED_VALUE = parseData(propertyValue[propertyKey], CURRENT_PATH);
-
           addProperty(PARSED_OBJECT, propertyKey, PARSED_VALUE, CURRENT_PATH);
         });
 
@@ -221,43 +235,6 @@ const WorkspaceJS = (function () {
     }
   }
 
-  class WSFor extends HTMLElement {
-    constructor() {
-      super();
-
-      let allowRendered = true;
-      let source = this.innerHTML;
-      this.innerHTML = '';
-
-      const renderer = () => {
-        const NAME = this.content;
-        if (!NAME) return;
-
-        const [FOR_LOOP_KEY, DATA_PROPERTY_KEY] = NAME.split(':');
-        const LINKED_DATA_PATH = getDataSchemas(DATA_PROPERTY_KEY, false);
-
-        if (!LINKED_DATA_PATH && allowRendered) {
-          window.addEventListener('load', renderer, false);
-          allowRendered = false;
-          return;
-        }
-
-        
-
-
-      }
-
-
-      renderer();
-    }
-
-    get content() {
-      return this.attr('content') || '';
-    }
-  }
-
-  customElements.define(PREFIX_KEY + 'for', WSFor);
-
 
   const createComponent = (function () {
     return function (componentName, component) {
@@ -268,17 +245,17 @@ const WorkspaceJS = (function () {
       /**
        * Data Translations
        */
-      const TRANSLATED_DATA = dataTranslations(DATA_SUBSCRIBERS, DATA_SCHEMAS);
+      const TRANSLATED_DATA = dataTranslations(DATA_SUBSCRIBERS, GLOBALS_ABSOLUTE_PATH);
       const COMPONENT_GLOBAL_KEY = '@' + componentName;
-
       /** _ = PROPERTY PATH. NOT USED PROPERTY */
       const PARSED_VALUE = TRANSLATED_DATA.parseData(
         {
           [COMPONENT_GLOBAL_KEY]: {
-            datas: component.datas
+            datas: component.datas || []
           }
         });
 
+      window.lo = DATA_SUBSCRIBERS;
       let componentDatas = GLOBALS[COMPONENT_GLOBAL_KEY] = {
         actions: { ...component?.actions },
         datas: PARSED_VALUE[COMPONENT_GLOBAL_KEY].datas,
@@ -291,7 +268,8 @@ const WorkspaceJS = (function () {
             [COMPONENT_GLOBAL_KEY]: {
               datas: val
             }
-          }, [COMPONENT_GLOBAL_KEY, 'datas']));
+          }));
+
         }
       });
 
@@ -333,6 +311,137 @@ const WorkspaceJS = (function () {
     }
   })();
 
+
+  /**
+   * 
+   * 
+   * 
+   * 
+   * 
+   * 
+   * 
+   */
+
+
+  class WSFor extends HTMLElement {
+    constructor() {
+      super();
+      const NAME = this.content;
+      let source = this.innerHTML;
+      this.innerHTML = '';
+
+      /** <ref_item_name>:@?<ref_data_path> */
+      /**
+       * Like for(let <ref_item_name> in <ref_data_path>)
+       */
+      const [REF_ITEM_NAME, REF_DATAS_PATH] = NAME.split(':');
+
+      /** Get directly data from GLOBALS if first character is a '@' */
+      const IS_GLOBAL_PATH = REF_DATAS_PATH[0] == '@';
+
+      let current_path = '';
+      let additional_path = '';
+
+      const update = (value) => {
+        this.innerHTML = '';
+
+        value.forEach((n, i) => {
+          setTempSchemas(REF_ITEM_NAME, `${current_path}.${i}`);
+          this.insertAdjacentHTML('beforeend', source);
+          //cleanTempSchemas(SUB_ITEM_KEY);
+        });
+      }
+
+      /**
+       * If it has a global path, get directly data from globals
+       */
+      if (IS_GLOBAL_PATH) {
+
+        const DATAS = getDataFromGlobals(REF_DATAS_PATH, false);
+
+        if (DATAS) {
+          update(DATAS);
+        }
+
+        current_path = REF_DATAS_PATH;
+        additional_path = '';
+        setDataSubscribers(REF_DATAS_PATH, update);
+
+
+      } else {
+        /**
+         * NOT ABSOLUTE PATH
+         * <current_ref_item>:<parent_ref_name>.<additionals>
+         * Like for(product in parentName.products)
+         */
+
+        const PARENT_DATAS = REF_DATAS_PATH.split('.'); // => [parentName, products]
+        const PARENT_REF_NAME = PARENT_DATAS.shift(); // => parentName
+        const REF_ABSOLUTE_PATH = getTempSchemas(PARENT_REF_NAME, []); // => @root.datas.products.0 or []
+
+
+        current_path = REF_ABSOLUTE_PATH + '.' + PARENT_DATAS.join('.'); // @root.datas.products
+
+        const DATA = getDataFromGlobals(current_path);
+
+        setDataSubscribers(current_path, update);
+
+        Array.isArray(DATA) && update(DATA);
+
+      }
+
+
+      // if (IS_ABSOLUTE_PATH) {
+      //   setTempSchemas(SUB_ITEM_KEY, DATA_PROPERTY_KEY);
+      // } else {
+      //   setTempSchemas(SUB_ITEM_KEY, getTempSchemas(PARENT_NAME));
+      // }
+
+      // const DATA_PATH = getTempSchemas(SUB_ITEM_KEY);
+      // const ADDITIONAL = IS_ABSOLUTE_PATH ? '' : '.' + PARENT_KEYS.join('.');
+
+
+
+      // const DATA = getDataFromGlobals(DATA_PATH + ADDITIONAL);
+      // DATA_PATH && setDataSubscribers(DATA_PATH, update);
+      // !IS_ABSOLUTE_PATH && DATA && update(DATA);
+      // let DATA = getDataFromGlobals(DATA_PATH, false);
+
+      // const renderer = () => {
+      //   const NAME = this.content;
+      //   if (!NAME) return;
+
+      //   const [SUB_ITEM_KEY, DATA_PROPERTY_KEY] = NAME.split(':');
+      //   const LINKED_DATA = getDataFromGlobals(DATA_PROPERTY_KEY, false);
+
+      //   if (!LINKED_DATA && allowRendered) {
+      //     window.addEventListener('load', renderer, false);
+      //     allowRendered = false;
+      //     return;
+      //   }
+
+      //   if (Array.isArray(LINKED_DATA)) {
+      //     LINKED_DATA.forEach((n, i) => {
+      //       getTempSchemas(SUB_ITEM_KEY, `${NAME}.${i}.`);
+      //       this.insertAdjacentHTML('beforeend', source);
+      //       cleanTempSchemas(SUB_ITEM_KEY);
+      //     });
+      //   }
+
+      // }
+
+
+      // renderer();
+    }
+
+    get content() {
+      return this.attr('content') || '';
+    }
+  }
+
+  customElements.define(PREFIX_KEY + 'for', WSFor);
+
+
   /**
    * 
    * 
@@ -345,48 +454,44 @@ const WorkspaceJS = (function () {
     constructor() {
       super();
 
-      let allowRendered = true;
-
+      // let allowRendered = true;
       /** GUID */
       defineGetProperty(this, 'guid', createGUID());
 
-      /** Render HTML */
-      const renderer = () => {
-        const NAME = this.content;
-        if (!NAME) return;
+      const NAME = this.content;
+      const IS_PARENT = NAME[0] == '@';
+      const PARSED_NAME = NAME.split('.');
 
-        const LINKED_DATA_PATH = getDataSchemas(NAME, false);
+      let data = '';
 
-        /** 
-         * Trigger the Renderer function if there is no data and the AllowRendered is true 
-         * If there is no data then the page has not yet been loaded. 
-         * That's why we define the onLoad property for the process to run when the page is loaded.
-         * */
-        if (!LINKED_DATA_PATH && allowRendered) {
-          window.addEventListener('load', renderer, false);
-          allowRendered = false;
-          return;
-        }
+      /** Create the element which to change */
+      let textNode = document.createTextNode('');
+      this.replaceWith(textNode);
 
-        /** Subscribe for changes */
-        const SUBSCRIBERS = getDataSubscribers(NAME, []);
-
-        /** Create the element which to change */
-        let textNode = document.createTextNode('');
-        this.replaceWith(textNode);
-
-        const update = function (oldValue, newValue) {
-          textNode.textContent = newValue;
-        }
-
-        SUBSCRIBERS.push(update);
-
-        LINKED_DATA_PATH && update(...LINKED_DATA_PATH);
+      /** Subscribe for changes */
+      const update = function (value) {
+        textNode.textContent = value;
       }
 
-      renderer();
+      let label = NAME;
+
+      if (IS_PARENT) {
+        data = getDataFromGlobals(NAME, '');
+      } else {
+        const REF_NAME = PARSED_NAME.shift();
+        const ADDITIONAL = PARSED_NAME.length ? '.' + PARSED_NAME.join('.') : '';
+        label = getTempSchemas(REF_NAME, '') + ADDITIONAL;
+        data = getDataFromGlobals(label, '');
+      }
+
+      setDataSubscribers(label, update);
+
+      if (data) {
+        data && update(data);
+      }
 
     }
+
 
     get content() {
       return this.attr('content') || '';
@@ -399,6 +504,7 @@ const WorkspaceJS = (function () {
   }
 
   customElements.define(PREFIX_KEY + 'text', WSText);
+
 
 
   /**
@@ -487,18 +593,21 @@ createComponent('main', function use() {
 
   use.datas = {
     products: [
-      'Products 1',
-      'Products 2',
-      'Products 3'
+      {
+        name: 'Lorem 1', orderID: 12313913, ID: 'PRD2838', archives: [{
+          title: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit',
+          numbers: [12, 3, 45, 5901, 4004, 1994]
+        }]
+      },
     ],
     address: [{
-      name: 'Timer'
+      name: 'adasdasd'
     }]
   };
 
   use.actions = {
     onChanged: function (e) {
-      use.datas.address[0].name = e.target.value;
+      use.datas.products[0].archives[0].title = e.target.value;
     }
   }
 });
